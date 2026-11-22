@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- lembar dokumen -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,30h20l14,14v34a2,2 0,0 1,-2 2h-32a2,2 0,0 1,-2 -2v-46a2,2 0,0 1,2 -2z" />
+    <!-- lipatan sudut -->
+    <path
+        android:fillColor="#BFD0FF"
+        android:pathData="M58,30v12a2,2 0,0 0,2 2h12z" />
+    <!-- baris isi -->
+    <path
+        android:fillColor="#1E5EFF"
+        android:pathData="M42,52h24v3h-24zM42,60h24v3h-24zM42,68h16v3h-16z" />
+</vector>
