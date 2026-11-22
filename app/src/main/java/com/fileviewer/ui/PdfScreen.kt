@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -52,9 +53,11 @@ fun PdfScreen(file: OpenedFile) {
 private fun PdfPages(doc: PdfFile) {
     BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF525659))) {
         val widthPx = constraints.maxWidth.coerceIn(1, 2048)
-        ZoomBox(panVertical = false) {
+        val listState = rememberLazyListState()
+        ZoomBox(onScrollBy = { listState.dispatchRawDelta(it) }) {
             LazyColumn(
                 Modifier.fillMaxSize(),
+                state = listState,
                 contentPadding = PaddingValues(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {

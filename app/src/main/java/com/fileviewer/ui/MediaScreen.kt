@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,7 +29,7 @@ import com.fileviewer.detect.OpenedFile
 /** Pemutar video & audio. ExoPlayer juga mengenali container dari isi file, bukan ekstensi. */
 @OptIn(UnstableApi::class)
 @Composable
-fun MediaScreen(file: OpenedFile) {
+fun MediaScreen(file: OpenedFile, active: Boolean = true) {
     val context = LocalContext.current
     val isAudio = file.type.kind == Kind.AUDIO
     var error by remember(file.uri) { mutableStateOf<PlaybackException?>(null) }
@@ -37,9 +38,10 @@ fun MediaScreen(file: OpenedFile) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(file.uri))
             prepare()
-            playWhenReady = true
         }
     }
+    // Hanya halaman yang sedang tampil yang diputar; saat di-swipe pergi, otomatis jeda.
+    LaunchedEffect(player, active) { player.playWhenReady = active }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlayerError(e: PlaybackException) {

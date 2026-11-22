@@ -20,8 +20,16 @@ File yang sama sekali tidak dikenali ditampilkan sebagai hex dump.
 
 ## Cara pakai
 
-- Buka aplikasi lalu **Pilih File**, atau
-- Dari file manager: tekan file, pilih **Buka dengan**, lalu **File Viewer**.
+- **Buka Folder** (izin folder cukup diberikan sekali): ketik di kolom cari, misalnya `.bin`. Hasilnya
+  mencakup subfolder. Ketuk sebuah file, lalu **geser kiri/kanan** untuk pindah ke file berikutnya
+  atau sebelumnya.
+- **Pilih 1 File**, atau dari file manager: tekan file, pilih **Buka dengan**, lalu **File Viewer**.
+  Jika file itu berada di folder yang sudah diizinkan, file lain di folder yang sama juga bisa di-swipe.
+
+Tombol back: viewer → hasil pencarian/daftar file → hapus pencarian → folder induk → layar utama → keluar.
+
+> Android hanya memberi aplikasi akses ke satu file yang dibuka, bukan ke isi foldernya.
+> Karena itu, agar bisa di-swipe, folder perlu diizinkan sekali lewat **Buka Folder**.
 
 ## Build
 

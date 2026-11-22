@@ -2,7 +2,7 @@ package com.fileviewer.detect
 
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
+import com.fileviewer.files.Folders
 
 class OpenedFile(
     val uri: Uri,
@@ -15,24 +15,12 @@ class OpenedFile(
 
 /** Membaca nama, ukuran, dan beberapa KB pertama file, lalu mendeteksi jenisnya. Jalankan di thread IO. */
 fun loadFile(context: Context, uri: Uri): OpenedFile {
-    val resolver = context.contentResolver
-    var name = uri.lastPathSegment?.substringAfterLast('/') ?: "file"
-    var size: Long? = null
-    runCatching {
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
-            ?.use { c ->
-                if (c.moveToFirst()) {
-                    val n = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (n >= 0 && !c.isNull(n)) name = c.getString(n)
-                    val s = c.getColumnIndex(OpenableColumns.SIZE)
-                    if (s >= 0 && !c.isNull(s)) size = c.getLong(s)
-                }
-            }
-    }
+    val (queriedName, size) = Folders.queryNameSize(context, uri)
+    val name = queriedName ?: uri.lastPathSegment?.substringAfterLast('/') ?: "file"
 
     val buffer = ByteArray(FileDetector.HEADER_SIZE)
     var read = 0
-    val stream = resolver.openInputStream(uri) ?: error("File tidak bisa dibuka")
+    val stream = context.contentResolver.openInputStream(uri) ?: error("File tidak bisa dibuka")
     stream.use {
         while (read < buffer.size) {
             val r = it.read(buffer, read, buffer.size - read)

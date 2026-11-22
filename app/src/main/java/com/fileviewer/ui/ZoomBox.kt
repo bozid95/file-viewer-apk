@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -23,23 +24,28 @@ import androidx.compose.ui.input.pointer.positionChanged
 
 /**
  * Pinch untuk zoom, double-tap untuk zoom in/out.
- * [panVertical] = false untuk konten yang bisa di-scroll (PDF): geser vertikal tetap
- * dipakai untuk scroll list, sedangkan geser horizontal menggeser tampilan yang di-zoom.
+ *
+ * Saat TIDAK di-zoom, geser satu jari dibiarkan lewat → dipakai pager (pindah file) atau list.
+ * Saat di-zoom, geser satu jari menggeser gambar (pager tidak ikut pindah).
+ *
+ * [onScrollBy] diisi untuk konten yang bisa di-scroll (PDF): saat di-zoom, geser vertikal
+ * diteruskan sebagai scroll list, bukan menggeser tampilan.
  */
 @Composable
 fun ZoomBox(
     modifier: Modifier = Modifier,
-    panVertical: Boolean = true,
+    onScrollBy: ((Float) -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    val scrollBy by rememberUpdatedState(onScrollBy)
 
     Box(
         modifier
             .fillMaxSize()
             .clipToBounds()
-            .pointerInput(panVertical) {
+            .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     do {
@@ -50,13 +56,13 @@ fun ZoomBox(
                             val pan = event.calculatePan()
                             val maxX = size.width * (scale - 1f) / 2f
                             val maxY = size.height * (scale - 1f) / 2f
+                            val scroller = scrollBy
+                            if (scroller != null && scale > 1f) scroller(-pan.y / scale)
                             offset = if (scale == 1f) Offset.Zero else Offset(
                                 (offset.x + pan.x).coerceIn(-maxX, maxX),
-                                if (panVertical) (offset.y + pan.y).coerceIn(-maxY, maxY) else 0f,
+                                if (scroller == null) (offset.y + pan.y).coerceIn(-maxY, maxY) else 0f,
                             )
-                            if (fingers > 1 || panVertical) {
-                                event.changes.forEach { if (it.positionChanged()) it.consume() }
-                            }
+                            event.changes.forEach { if (it.positionChanged()) it.consume() }
                         }
                     } while (event.changes.any { it.pressed })
                 }

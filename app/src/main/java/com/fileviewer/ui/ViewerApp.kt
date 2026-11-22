@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -22,134 +23,132 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.fileviewer.MainActivity
-import com.fileviewer.detect.Kind
 import com.fileviewer.detect.OpenedFile
-import com.fileviewer.detect.formatSize
-import com.fileviewer.detect.loadFile
-import kotlinx.coroutines.CancellationException
+import com.fileviewer.files.Dir
+import com.fileviewer.files.FileEntry
+import com.fileviewer.files.Folders
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private sealed interface LoadState {
-    data object Empty : LoadState
-    data object Loading : LoadState
-    class Ready(val file: OpenedFile) : LoadState
-    class Failed(val message: String) : LoadState
+/** File yang dikirim dari aplikasi lain. Objek baru per intent, agar file yang sama bisa dibuka ulang. */
+class ExternalOpen(val uri: Uri)
+
+/** Daftar file yang bisa di-swipe, dimulai dari [start]. */
+class ViewerState(val files: List<FileEntry>, val start: Int)
+
+@Composable
+fun ViewerApp(external: ExternalOpen?) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var viewer by remember { mutableStateOf<ViewerState?>(null) }
+    var dirs by remember { mutableStateOf<List<Dir>>(emptyList()) }
+    var busy by remember { mutableStateOf(false) }
+
+    /** Buka satu file; jika foldernya sudah diizinkan, file lain di folder itu ikut bisa di-swipe. */
+    fun openSingle(uri: Uri) {
+        scope.launch {
+            busy = true
+            viewer = withContext(Dispatchers.IO) {
+                runCatching { Folders.siblingsOf(context, uri) }.getOrNull()
+                    ?.let { (files, index) -> ViewerState(files, index) }
+                    ?: Folders.queryNameSize(context, uri).let { (name, size) ->
+                        ViewerState(listOf(FileEntry(uri, name ?: "file", size)), 0)
+                    }
+            }
+            busy = false
+        }
+    }
+
+    fun enterDir(dir: Dir) {
+        dirs = dirs + dir
+        Folders.saveLast(context, dir)
+    }
+
+    LaunchedEffect(external) { external?.let { openSingle(it.uri) } }
+
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { openSingle(it) }
+    }
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        if (tree != null) scope.launch {
+            val root = withContext(Dispatchers.IO) {
+                runCatching {
+                    Folders.takePermission(context, tree)
+                    Folders.rootOf(context, tree)
+                }.getOrNull()
+            }
+            if (root == null) {
+                Toast.makeText(context, "Folder tidak bisa dibuka", Toast.LENGTH_SHORT).show()
+            } else {
+                dirs = emptyList()
+                enterDir(root)
+            }
+        }
+    }
+    val openFolder = {
+        val last = Folders.last(context)
+        if (last != null) dirs = listOf(last) else folderPicker.launch(null)
+    }
+
+    // Urutan tombol back: viewer → hasil pencarian/daftar file → folder induk → layar utama → keluar.
+    BackHandler(enabled = viewer != null) { viewer = null }
+    BackHandler(enabled = viewer == null && dirs.isNotEmpty()) {
+        dirs = dirs.dropLast(1)
+        dirs.lastOrNull()?.let { Folders.saveLast(context, it) }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        // Browser tetap ada di bawah viewer, supaya hasil pencarian & posisi scroll tidak hilang.
+        if (dirs.isNotEmpty()) {
+            BrowserScreen(
+                dir = dirs.last(),
+                onOpenDir = ::enterDir,
+                onOpenFile = { files, index -> viewer = ViewerState(files, index) },
+                onChangeFolder = { folderPicker.launch(null) },
+                backEnabled = viewer == null,
+            )
+        } else {
+            HomeScreen(
+                onPickFile = { filePicker.launch(arrayOf("*/*")) },
+                onOpenFolder = openFolder,
+            )
+        }
+        viewer?.let { v -> key(v) { ViewerPager(v) } }
+        if (busy) LoadingBox()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ViewerApp(uri: Uri?, onPick: (Uri) -> Unit) {
-    val context = LocalContext.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(onPick) }
-    val pick = { picker.launch(arrayOf("*/*")) }
-
-    val state by produceState<LoadState>(LoadState.Empty, uri) {
-        if (uri == null) {
-            value = LoadState.Empty
-            return@produceState
-        }
-        value = LoadState.Loading
-        value = try {
-            LoadState.Ready(withContext(Dispatchers.IO) { loadFile(context, uri) })
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            LoadState.Failed(e.message ?: e.javaClass.simpleName)
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    val s = state
-                    if (s is LoadState.Ready) {
-                        Column {
-                            Text(
-                                s.file.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            Text(
-                                subtitle(s.file), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    } else {
-                        Text("File Viewer")
-                    }
-                },
-                actions = {
-                    val s = state
-                    if (s is LoadState.Ready) {
-                        TextButton(onClick = { openWith(context, s.file.uri, s.file.type.mime) }) { Text("Buka di…") }
-                    }
-                    TextButton(onClick = pick) { Text("Pilih") }
-                },
-            )
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when (val s = state) {
-                LoadState.Empty -> EmptyScreen(pick)
-                LoadState.Loading -> LoadingBox()
-                is LoadState.Failed -> MessageBox("Gagal membuka file", s.message) {
-                    Button(onClick = pick) { Text("Pilih file lain") }
-                }
-                is LoadState.Ready -> FileContent(s.file)
+private fun HomeScreen(onPickFile: () -> Unit, onOpenFolder: () -> Unit) {
+    Scaffold(topBar = { TopAppBar(title = { Text("File Viewer") }) }) { padding ->
+        Box(Modifier.padding(padding)) {
+            MessageBox(
+                "Buka file apa saja",
+                "Jenis file dideteksi otomatis dari isinya, jadi file yang di-rename (mis. .bin) tetap bisa dibuka.\n\n" +
+                    "Buka Folder → cari file (mis. \".bin\") → ketuk file → geser kiri/kanan untuk file berikutnya.",
+            ) {
+                Button(onClick = onOpenFolder) { Text("Buka Folder") }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onPickFile) { Text("Pilih 1 File") }
             }
         }
-    }
-}
-
-@Composable
-private fun FileContent(file: OpenedFile) {
-    val type = file.type
-    if (type.kind == Kind.OTHER || !type.viewable) {
-        UnknownScreen(file)
-        return
-    }
-    when (type.kind) {
-        Kind.IMAGE -> ImageScreen(file)
-        Kind.VIDEO, Kind.AUDIO -> MediaScreen(file)
-        Kind.PDF -> PdfScreen(file)
-        Kind.TEXT -> TextScreen(file)
-        Kind.OTHER -> UnknownScreen(file)
-    }
-}
-
-/** Contoh: "MP4 · 12.3 MB · terdeteksi dari isi (bukan .bin)" */
-private fun subtitle(file: OpenedFile): String = buildList {
-    add(file.type.label)
-    file.size?.let { add(formatSize(it)) }
-    val ext = file.name.substringAfterLast('.', "").lowercase()
-    val expected = file.type.extension
-    if (expected.isNotEmpty() && ext != expected && !(ext == "jpeg" && expected == "jpg")) {
-        add(if (ext.isEmpty()) "terdeteksi dari isi" else "terdeteksi dari isi (bukan .$ext)")
-    }
-}.joinToString(" · ")
-
-@Composable
-private fun EmptyScreen(onPick: () -> Unit) {
-    MessageBox(
-        "Buka file apa saja",
-        "Jenis file dideteksi otomatis dari isinya, jadi file yang di-rename (mis. .bin) tetap bisa dibuka.\n\n" +
-            "Bisa juga dari file manager: Buka dengan → File Viewer.",
-    ) {
-        Button(onClick = onPick) { Text("Pilih File") }
     }
 }
 

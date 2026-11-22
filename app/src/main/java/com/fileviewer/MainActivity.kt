@@ -10,20 +10,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.IntentCompat
+import com.fileviewer.ui.ExternalOpen
 import com.fileviewer.ui.FileViewerTheme
 import com.fileviewer.ui.ViewerApp
 
 class MainActivity : ComponentActivity() {
 
-    private var uri by mutableStateOf<Uri?>(null)
+    private var external by mutableStateOf<ExternalOpen?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        uri = uriFrom(intent)
+        external = uriFrom(intent)?.let(::ExternalOpen)
         setContent {
             FileViewerTheme {
-                ViewerApp(uri = uri, onPick = { uri = it })
+                ViewerApp(external)
             }
         }
     }
@@ -31,7 +32,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        uriFrom(intent)?.let { uri = it }
+        uriFrom(intent)?.let { external = ExternalOpen(it) }
     }
 
     private fun uriFrom(intent: Intent?): Uri? = when (intent?.action) {
